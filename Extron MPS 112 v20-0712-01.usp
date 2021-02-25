@@ -1,0 +1,512 @@
+/*******************************************************************************************
+  SIMPL+ Module Information
+  (Fill in comments below)
+*******************************************************************************************/
+/*
+Dealer Name: Aisle Group
+System Name: Extron MPS 112
+System Number: v20-0712-01
+Programmer:  Quentin Baker
+ 
+This module will allow the user to control an Extron MPS 112 A/V Switcher. This module will allow the user to control input switching, volume levels, and microphone power.
+The volume controls will operate based off of the volume feedback from the switcher. Similar to the Analog Increment with Optional Feedback Symbol. Volume feedback has to be
+received from the switcher in order to increase or decrease the volume from its current level. If there is no response from the switcher, the volume will not be changed. 
+If a technician makes changes on the switcher itself, the module output signals will reflect the state of the switcher.  This is true for volume change, audio mute, mic power
+and input switching. This way the touch panel will always reflect the state of the swither. This will help prevent the touch panel feedback and A/V switcher from getting out 
+of sync.  The processor has to receive a response from the switcher in order for this to work. One way serial drivers will not work for this module.
+
+The switcher response will be split into two variables (responseCheck and responseValue). responseCheck will tell us what kind of change has been made on the switcher. 
+responseValue will tell us the value of that change. The value of responseCheck will drive certain actions in the code. If responseCheck is equal to "Vol", we 
+know we received a volume change response and that our code is working with volume level values and not mic level values. responseValue will house the value for these levels.
+So if the switcher response is Vol75, Vol will be stored in responseCheck and 75 will be stored in responseValue. 75 will be the volume level.
+
+Examples:
+"Chn1": Input change. The input selected is 1. 
+
+"Vol50": Volume level change. The volume level is 50.
+
+"Amt0": Audio mute status change. 0 means audio is unmuted
+
+"Aud6": Microphone gain change. Microphone gain is 6dB.
+
+"Mix1": Microphone power status change. 1 means microphone power is on.
+
+"Adl15": Audio ducking level change. Audio will duck by 15dB.                                                
+
+These variables will be updated whenever someone makes a change on the A/V switcher itself. The value of these variables will change the module outputs to reflect the state
+of the A/V switcher. The button press on the touch panel will also change the module outpus. A busy flag will be used so that the button presses and the switcher do not
+try to change the module outputs at the same time. This busy flag will also allow the parser to complete before atempting to parse new data.
+*/
+
+/*******************************************************************************************
+  Compiler Directives
+  (Uncomment and declare compiler directives as needed)
+*******************************************************************************************/
+#SYMBOL_NAME "Extron MPS 112 v20-0712-01"
+#CATEGORY "23" // Switcher
+#DEFAULT_VOLATILE
+#ENABLE_STACK_CHECKING
+#ENABLE_TRACE
+
+#HELP_BEGIN
+This module will allow the user to control an Extron MPS 112 A/V Switcher. This module will allow the user to control input switching, volume levels, and microphone power.
+The volume controls will operate based off of the volume feedback from the switcher. Similar to the Analog Increment with Optional Feedback Symbol. Volume feedback has to be
+received from the switcher in order to increase or decrease the volume from its current level. If there is no response from the switcher, the volume will not be changed. 
+If a technician makes changes on the switcher itself, the module output signals will reflect the state of the switcher.  This is true for volume change, audio mute, mic power
+and input switching. This way the touch panel will always reflect the state of the swither. This will help prevent the touch panel feedback and A/V switcher from getting out 
+of sync.  The processor has to receive a response from the switcher in order for this to work. One way serial drivers will not work for this module.
+
+The switcher_rx$ data needs to be sent on a single logic wave. It is recommended to use a serial gather symbol to drive the serial data into the switcher_rx$ input.  
+	
+Signal Inputs
+vga_1 - Switches to Input 1 on the switcher.
+vga_2 - Switches to Input 2 on the switcher.
+vga_3 - Switches to Input 3 on the switcher.
+vga_4 - Switches to Input 4 on the switcher.
+
+volume_up - Increases the volume on the switcher.
+volume_down - Decreases the volume on the switcher.
+
+mute_on - Mutes the Volume.
+mute_off - UnMutes the Volume.
+mute_toggle - toggles the volume mute.
+
+mic_on - Powers on the microphone.
+mic_off - Powers off the microphone.
+mic_toggle - toggles the power for the microphone.
+
+volume_preset - Sets the volume to a specified Value range 0d - 100d.
+switcher_rx$ - Receive data from the switcher.
+
+
+Signal Outputs
+vga_1_fb - Input 1 Feedback.
+vga_2_fb - Input 2 Feedback.
+vga_3_fb - Input 3 Feedback.
+vga_4_fb - Input 4 Feedback.
+
+mute_on_fb - Mute On Feedback.
+mute_off_fb - Mute Off Feedback.
+
+mic_on_fb - Microphone On Feedback.
+mic_off_fb - Microphone Off Feedback.
+
+volume_out - Analog volume level. Used for gauge feed back. 0d - 100d.
+switcher_tx$ - Transmit data to the switcher.
+source_tx$ - Transmit selected source text to the switcher.
+
+Parameters
+sourceText1 - The name of Input 1. This will be sent to fusion to tell us which source is selected.
+sourceText2 - The name of Input 2. This will be sent to fusion to tell us which source is selected.
+sourceText3 - The name of Input 3. This will be sent to fusion to tell us which source is selected.
+sourceText4 - The name of Input 4. This will be sent to fusion to tell us which source is selected.
+
+#HELP_END
+
+/*******************************************************************************************
+  Parameters
+  (Uncomment and declare parameters as needed)
+*******************************************************************************************/
+STRING_PARAMETER _skip_, _skip_, _skip_, _skip_, _skip_, _skip_, _skip_, _skip_, _skip_,
+_skip_, _skip_, _skip_,_skip_, _skip_, _skip_, _skip_, _skip_, sourceText1[16], sourceText2[16], sourceText3[16], sourceText4[16];
+
+/*******************************************************************************************
+  DIGITAL, ANALOG and SERIAL INPUTS and OUTPUTS
+  (Uncomment and declare inputs and outputs as needed)
+*******************************************************************************************/ 
+
+//Digital Inputs
+DIGITAL_INPUT vga_1, vga_2, vga_3, vga_4, _skip_;
+DIGITAL_INPUT volume_up, volume_down, mute_on, mute_off, mute_toggle, _skip_;
+DIGITAL_Input mic_on, mic_off, mic_toggle, _skip_;
+
+//Analog Inputs
+ANALOG_INPUT volume_preset;
+
+//String Inputs
+STRING_INPUT switcher_rx$[16];
+
+//Digital Outputs
+DIGITAL_OUTPUT vga_1_fb, vga_2_fb, vga_3_fb, vga_4_fb, _skip_, _skip_, _skip_;
+DIGITAL_OUTPUT mute_on_fb, mute_off_fb, _skip_, _skip_;
+DIGITAL_OUTPUT mic_on_fb, mic_off_fb, _skip_ , _skip_;
+
+//Analog Outputs
+ANALOG_OUTPUT volume_out;
+
+//String Outputs
+STRING_OUTPUT switcher_tx$, source_tx$; 
+ 
+
+/*******************************************************************************************
+  Global Variables
+  (Uncomment and declare global variables as needed)
+  Note:  Be sure to initialize all declared STRING variables as needed
+         For example, in Function Main: myString = "";
+*******************************************************************************************/
+
+//Busy Flag
+INTEGER busyFlag;
+
+//Input selection Variable
+INTEGER selectedInput;
+
+//Volume Variables
+INTEGER volumeFeedback;
+INTEGER volumeUpdate;
+INTEGER muteStatus;
+
+//Microphone Variables
+INTEGER micPowerStatus;
+
+//Switcher Response Variables
+STRING responseCheck[30];
+STRING responseValue[30];
+
+/*******************************************************************************************
+  Functions
+  (Add any additional functions here)
+  Note:  Functions must be physically placed before the location in
+         the code that calls them.
+*******************************************************************************************/
+FUNCTION clearOutput()
+{
+	// Sets the busy flag to avoid re-entry into parser.
+	busyFlag = 1;
+
+	// Clears vga_1_fb, vga_2_fb, vga_3_fb, and vga_4_fb. Will be used to emulate an interlock. Break before make.
+	vga_1_fb = 0;
+	vga_2_fb = 0;
+	vga_3_fb = 0;
+	vga_4_fb = 0;
+}
+ 
+FUNCTION muteOn()
+{
+	// Sets the busy flag to avoid re-entry into parser.
+	busyFlag = 1;
+
+	// Sets mute_on_fb and resets mute_on_fb.
+	mute_off_fb = 0;
+	mute_on_fb = 1;
+
+	// Sends the volume mute on command to the switcher.
+	switcher_tx$ = "1Z";
+}
+
+FUNCTION muteOff()
+{
+	// Sets the busy flag to avoid re-entry into parser.
+	busyFlag = 1;
+
+	// Resets mute_on_fb and sets mute_off_fb.
+	mute_off_fb = 1;
+	mute_on_fb = 0;
+
+	// Sends the volume mute off command to the switcher.
+    switcher_tx$ = "0Z";
+}
+
+FUNCTION micOn()
+{
+	// Sets the busy flag to avoid re-entry into parser.
+	busyFlag = 1;
+    
+	// Resets mic_off_fb and sets mic_on_fb.
+	mic_off_fb = 0;
+	mic_on_fb = 1;
+
+	// Sends the microphone on command to the switcher.
+	switcher_tx$ = "1M";
+}
+
+FUNCTION micOff()
+{
+	// Sets the busy flag to avoid re-entry into parser.
+	busyFlag = 1;
+    
+	// Sets mic_off_fb and resets mic_on_fb.
+	mic_off_fb = 1;
+	mic_on_fb = 0;
+
+	// Sends the microphone off command to the switcher.
+	switcher_tx$ = "0M";
+}
+
+
+
+/*******************************************************************************************
+  Event Handlers
+  (Uncomment and declare additional event handlers as needed)
+*******************************************************************************************/
+PUSH vga_1
+{
+	// Clears all outputs and then sets the vga_1_fb output. (Interlock)
+	clearOutput();
+	vga_1_fb = 1;
+	
+	// Sends the input one command to the switcher.
+	source_tx$ = sourceText1;
+	switcher_tx$ = "1*1!";
+}
+
+PUSH vga_2
+{
+	// Clears all outputs and then sets the vga_2_fb output. (Interlock)
+	clearOutput();
+	vga_2_fb = 1;
+
+    // Sends the input one command to the switcher.
+	source_tx$ = sourceText2;
+	switcher_tx$ = "1*2!";
+}
+
+
+PUSH vga_3
+{
+    // Clears all outputs and then sets the vga_3_fb output. (Interlock)
+	clearOutput();
+	vga_3_fb = 1;
+
+	// Sends the input three command to the switcher.
+	source_tx$ = sourceText3;
+	switcher_tx$ = "1*3!";
+}
+
+
+PUSH vga_4
+{
+    // Clears all outputs and then sets the vga_4_fb output. (Interlock)
+	clearOutput();
+	vga_4_fb = 1;
+	
+    // Sends the input four command to the switcher.
+	source_tx$ = sourceText4;
+	switcher_tx$ = "1*4!";
+}
+
+PUSH volume_up
+{
+	//Volume will be unmuted before the volume is increased.
+	if(mute_on_fb = 1) {
+	    muteOff();
+	}
+	
+	// Will slowly increase the volume of the switcher while the volume_up input is held.
+	While(volume_up = 1) {       
+		
+        // The volume max is 100. volumeFeedback has to be less than 100 to perform a volume increase. The updated volume out will be equal to volumeFeedback plus 1.
+		if(volumeFeedback < 100) {
+			volumeUpdate = volumeFeedback + 1;
+			volume_out = volumeUpdate;
+			switcher_tx$ = ITOA(volumeUpdate) + "V"; // Sends the command to increase the volume to the switcher.
+			Delay(10); 
+		}
+	}
+}
+
+PUSH volume_down
+{
+	//Volume will be unmuted before the volume is decreased.
+	if(mute_on_fb = 1) {
+	    muteOff();
+	}
+
+    While(volume_down = 1) {
+
+        // The volume min is 0. volumeFeedback has to be greater than 0 to perform a volume decrease. The updated volume out will be equal to volumeFeedback minus 1.
+		if(volumeFeedback > 0) {
+			volumeUpdate = volumeFeedback - 1;
+			volume_out = volumeUpdate;
+			switcher_tx$ = ITOA(volumeUpdate) + "V"; // Sends the command to decrease the volume to the switcher.
+
+			Delay(10); 
+		}
+	}
+}
+
+PUSH mute_on
+{
+	muteON(); // Mutes volume.
+}
+
+PUSH mute_off
+{
+	muteOff(); // Unmutes volume.
+}
+
+PUSH mute_toggle
+{
+	if(mute_on_fb = 0) {
+		muteOn(); // Mutes volume.
+	}
+	else if(mute_on_fb = 1) {
+		muteOff(); // Unmutes volume.
+	}
+}
+
+CHANGE volume_preset
+{ 
+	// Sends the volume preset command to the switcher.
+	switcher_tx$ = ITOA(volume_preset) + "V"; 
+}
+
+
+PUSH mic_on
+{
+	micON(); // Powers on the microphone.
+}
+
+PUSH mic_off
+{
+	micOff(); // Powers off the microphone.
+}
+
+PUSH mic_toggle
+{
+	if(mic_on_fb = 0) {
+		micON(); // Powers on the microphone.
+	}
+	else if(mic_on_fb = 1) {
+		micOff(); // Powers off the microphone.
+	}
+}
+
+CHANGE switcher_rx$
+{   
+	// Grabs the first three characters of switcher_rx$ and stores them in responseCheck.
+    responseCheck = RemoveByLength(3, switcher_rx$);
+
+	// Stores the remaining characters of switcher_rx$ responseValue. 
+	responseValue = switcher_rx$;
+
+
+    // If not busy processing and there is input change response.
+	if(responseCheck = "Chn" & busyFlag = 0) {
+
+		//Sets the busy flag to avoid re-entry into parser.
+		busyFlag = 1;
+
+		//Stores the selected source in selectedInput.
+ 		selectedInput = ATOI(responseValue);
+        
+		//Clears vga_1_fb, vga_2_fb, vga_3_fb, and vga_4_fb.
+  		clearOutput();
+
+		//Sets the fb for the selected input.
+		SWITCH(selectedInput) {
+
+			Case (1): // Source one selected.
+			{ 
+				vga_1_fb = 1;
+				source_tx$ = sourceText1;
+			}
+			CASE (2): // Source two selected.
+			{ 
+				vga_2_fb = 1;
+				source_tx$ = sourceText2;
+			}
+			CASE (3): // Source three selected.
+			{ 
+				vga_3_fb = 1;
+				source_tx$ = sourceText3;
+			}
+			CASE (4): // Source four selected.
+			{ 
+				vga_4_fb = 1;
+			    source_tx$ = sourceText4;
+			}
+
+		}
+	}
+	
+	// If not busy processing and there is volume change response.
+	if(responseCheck = "Vol" & busyFlag = 0) {
+		
+		//Sets the busy flag to avoid re-entry into parser.
+		busyFlag = 1; 
+
+		//Stores the current volume level in volumeFeedback
+		volumeFeedback = ATOI(responseValue)
+;	
+		// Updates the volume_out value if the volume is changed on the switcher itself and not by the volume buttons on the touchpanel.
+		if(volume_up = 0 && volume_down = 0) {
+			volume_out = volumeFeedback;
+        }
+	}
+    
+	// Checking for a volume mute response. If the response is true, the volume mute state is stored in muteStatus.
+	if(responseCheck = "Amt" & busyFlag = 0) {
+		
+		//Sets the busy flag to avoid re-entry into parser.
+		busyFlag = 1; 
+
+		//Stores the volume mute status in muteStatus. 
+		muteStatus = ATOI(responseValue);
+
+		// The volume mute feedback will be determined by the muteStatus.
+		SWITCH(muteStatus) {
+
+			Case (0): // If status is 0, mute is off.
+			{
+            	// Resets mute_on_fb and sets mute_off_fb.
+				mute_off_fb = 1;
+				mute_on_fb = 0;
+			}
+			CASE (1): // If status is 1, mute is on.
+			{
+                // Sets mute_on_fb and resets mute_off_fb.
+				mute_off_fb = 0;
+				mute_on_fb = 1;
+			}
+		}
+	}
+	
+	// Checking for a microphone power response. If the response is true, the mic power state is stored in micPowerStatus.
+	if(responseCheck = "Mix" & busyFlag = 0) {
+
+		//Sets the busy flag to avoid re-entry into parser.
+		busyFlag = 1;  
+
+		//Stores the mic power status in micPowerStatus.
+		micPowerStatus = ATOI(responseValue);
+		
+		// Microphone power feedback will be determined by the micPowerStatus.
+		SWITCH(micPowerStatus) {
+
+			Case (0): // If status is 0, microphone is off.
+			{
+            	// Sets mic_off_fb and resets mic_on_fb.
+				mic_off_fb = 1;
+				mic_on_fb = 0;
+			}
+			CASE (1): // If status is 1, microphone is on.
+			{
+                // Resets mic_off_fb and sets mic_on_fb.
+				mic_off_fb = 0;
+				mic_on_fb = 1;			
+			}
+		}
+	}
+	
+	// Clears busy flag.
+	busyFlag = 0;
+}
+
+
+/*******************************************************************************************
+  Main()
+  Uncomment and place one-time startup code here
+  (This code will get called when the system starts up)
+*******************************************************************************************/
+Function Main()
+{
+	// Variable initialization.
+	selectedInput = 0;
+	volumeFeedback = 0;
+	volumeUpdate = 0;
+	muteStatus = 0;
+	micPowerStatus = 0;
+	busyFlag = 0;
+}
+
